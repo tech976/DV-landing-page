@@ -23,16 +23,31 @@ python3 -m http.server 8000
 # then visit http://localhost:8000
 ```
 
-## Receiving leads
+## Receiving leads — DigiVeritaz CRM
 
-Leads are only logged to the browser console until a webhook is set.
-In `js/app.js`, set `WEBHOOK_URL` to a Google Apps Script, Zapier, Make or CRM
-endpoint. The lead is POSTed as JSON (sent as `text/plain` to avoid CORS
-preflight) with these fields:
+Completed submissions POST straight to the CRM's website-lead webhook
+(`POST https://crm.digiveritaz.tech/api/website/lead`). Sent as `text/plain`
+with `{mode:"no-cors"}` to avoid a CORS preflight, so the shared secret travels
+in the request body.
 
-`source, submitted_at, goal, industry, monthly_budget, platforms, problem,
-timeline, website_or_instagram, callback_slot, first_name, last_name, phone,
-email, whatsapp_opt_in, page`
+**Before going live**, in `js/app.js` set:
+
+```js
+var WEBHOOK_SECRET = "PASTE_WEBSITE_LEAD_SECRET_HERE"; // = the CRM's WEBSITE_LEAD_SECRET
+```
+
+⚠ This is a client-side page, so the secret is visible in the page source. It
+only authorises creating website leads. To hide it, relay through a Google
+Apps Script instead (point `WEBHOOK_URL` at the script and move the secret into
+the script).
+
+The CRM maps the funnel onto its lead schema (`fullname, email, phone, budget,
+services[], message, _source, _page, status`); the quiz answers (goal,
+industry, timeline, callback window, website, WhatsApp opt-in) are folded into
+`message`. Ad attribution (every `utm_*`, `gclid`, `fbclid`, `gbraid`, `wbraid`
+in the landing URL, plus referrer and device) is captured automatically, and
+leads are deduped by phone/email. They land in the CRM Leads inbox as source
+**Website**, form **Performance Audit funnel**.
 
 ## Flow notes
 

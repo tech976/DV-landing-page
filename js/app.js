@@ -5,10 +5,17 @@
 (function () {
   "use strict";
 
-  // ---- Lead delivery ----
-  // Set a webhook URL (Google Apps Script, Zapier, Make, CRM) to receive leads.
-  // Left empty, leads are only logged to the browser console.
-  var WEBHOOK_URL = "";
+  // ---- Lead delivery (direct to the DigiVeritaz CRM) ----
+  // Each completed submission is POSTed to the CRM's website-lead webhook. The
+  // CRM dedupes by phone/email and auto-captures ad attribution (UTMs + click
+  // ids). We post with {mode:"no-cors"} to avoid a CORS preflight, so the
+  // shared secret travels in the request BODY, not a header.
+  //
+  // ⚠ IMPORTANT: set WEBHOOK_SECRET to the CRM's WEBSITE_LEAD_SECRET value
+  //    before going live. This is a client-side page, so the secret is visible
+  //    in the page source — it only authorises creating website leads.
+  var WEBHOOK_URL = "https://crm.digiveritaz.tech/api/website/lead";
+  var WEBHOOK_SECRET = "PASTE_WEBSITE_LEAD_SECRET_HERE";
 
   // ---- Screen indexes (match data-i in index.html) ----
   var HERO = 0;
@@ -181,26 +188,57 @@
     el.addEventListener("mousedown", unlock);
   });
 
+  // Collect marketing attribution from the ad-click URL so the CRM credits the
+  // right channel/campaign. Passes through every query param (utm_*, gclid,
+  // fbclid, gbraid, wbraid, …) plus the landing URL, referrer and device — the
+  // CRM's attribution parser picks out what it recognises.
+  function collectAttribution() {
+    var out = {};
+    try {
+      new URLSearchParams(location.search).forEach(function (v, k) { if (v) out[k] = v; });
+    } catch (e) {}
+    out.landing_url = location.href;
+    out.referrer = document.referrer || "";
+    out.device = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? "mobile" : "desktop";
+    return out;
+  }
+
   // ---------- Submit ----------
   function submit() {
+    var firstNm = firstName.value.trim();
+    var slot = data.slot;
+
+    // Everything the quiz captured, folded into one readable note so no answer
+    // is lost (the CRM stores free-form fields it doesn't have columns for here).
+    var summary =
+      "Goal: " + (data.goal || "—") +
+      "\nIndustry: " + (data.industry || "—") +
+      "\nMonthly budget: " + (data.budget || "—") +
+      "\nPlatforms: " + (data.platforms.join(", ") || "—") +
+      "\nTimeline: " + (data.timeline || "—") +
+      "\nCallback window: " + (slot || "—") +
+      "\nWebsite/Instagram: " + (site.value.trim() || "—") +
+      "\nWhatsApp opt-in: " + (whatsapp.checked ? "Yes" : "No") +
+      (problem.value.trim() ? "\n\nProblem: " + problem.value.trim() : "");
+
+    // CRM website-lead schema (POST /api/website/lead).
     var payload = {
-      source: "digiveritaz-performance-funnel",
-      submitted_at: new Date().toISOString(),
-      goal: data.goal,
-      industry: data.industry,
-      monthly_budget: data.budget,
-      platforms: data.platforms.join(", "),
-      problem: problem.value.trim(),
-      timeline: data.timeline,
-      website_or_instagram: site.value.trim(),
-      callback_slot: data.slot,
-      first_name: firstName.value.trim(),
-      last_name: lastName.value.trim(),
-      phone: "+91" + phone.value,
+      secret: WEBHOOK_SECRET,
+      status: "Complete",
+      _source: "digiveritaz-performance-funnel",
+      _page: location.href,
+      fullname: (firstNm + " " + lastName.value.trim()).trim(),
       email: email.value.trim(),
-      whatsapp_opt_in: whatsapp.checked,
-      page: location.href
+      phone: "+91" + phone.value,
+      budget: data.budget,
+      "services[]": data.platforms,
+      message: summary
     };
+    // Merge ad attribution (does not overwrite any field set above).
+    var attribution = collectAttribution();
+    for (var k in attribution) {
+      if (attribution.hasOwnProperty(k) && payload[k] == null) payload[k] = attribution[k];
+    }
 
     sending = true;
     nextBtn.disabled = true;
@@ -208,15 +246,15 @@
 
     var finish = function () {
       sending = false;
-      $("okTitle").textContent = "You're booked, " + payload.first_name + "!";
-      $("okSub").textContent = payload.callback_slot === "Call me now"
+      $("okTitle").textContent = "You're booked, " + firstNm + "!";
+      $("okSub").textContent = slot === "Call me now"
         ? "Our specialist will call you shortly to start your free performance marketing audit."
-        : "Our specialist will call you in your " + payload.callback_slot + " window to start your free performance marketing audit.";
+        : "Our specialist will call you in your " + slot + " window to start your free performance marketing audit.";
       show(SUCCESS);
     };
 
     if (WEBHOOK_URL) {
-      // no-cors + text/plain avoids a CORS preflight (works with Google Apps Script)
+      // no-cors + text/plain avoids a CORS preflight; the CRM parses text/plain.
       fetch(WEBHOOK_URL, {
         method: "POST",
         mode: "no-cors",
