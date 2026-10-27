@@ -15,7 +15,7 @@
   //    before going live. This is a client-side page, so the secret is visible
   //    in the page source — it only authorises creating website leads.
   var WEBHOOK_URL = "https://crm.digiveritaz.tech/api/website/lead";
-  var WEBHOOK_SECRET = "PASTE_WEBSITE_LEAD_SECRET_HERE";
+  var WEBHOOK_SECRET = "dc888347af4ac0498cd4c87907da8ee62ac7c5a9484155e2e4345d9c5958d0fa";
 
   // ---- Screen indexes (match data-i in index.html) ----
   var HERO = 0;
